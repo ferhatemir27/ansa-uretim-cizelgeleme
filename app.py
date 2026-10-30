@@ -169,77 +169,48 @@ if uploaded_file is not None:
                     
                     df_gantt = pd.DataFrame(gantt_list)
                     
-                    # --- DÜZELTİLMİŞ VE FERAH FİLTRELEME ALANI ---
-                    st.markdown("---")
-                    st.subheader("🔍 İnteraktif Görselleştirme ve Filtreleme Araçları")
+                    st.subheader("📅 Üretim Gantt Şeması (Senaryo Bazlı Çizelge)")
                     
-                    f_col1, f_col2 = st.columns(2)
-                    with f_col1:
-                        tum_plan_makineleri = df_gantt['Makine'].unique().tolist()
-                        secilen_makineler_filtre = st.multiselect(
-                            "Gantt Şemasında Görüntülenecek Makineler",
-                            options=tum_plan_makineleri,
-                            default=[],
-                            help="Hiçbir şey seçmezseniz tüm makineler gösterilir. Belirli makineleri görmek için seçebilirsiniz."
-                        )
-                    with f_col2:
-                        arama_is_kodu = st.text_input(
-                            "İş Kodu / Sipariş Ara",
-                            value="",
-                            help="Belirli bir iş kodunu aramak için yazın (örn: IE-8062 veya ACIL)."
-                        )
+                    fig = px.bar(
+                        df_gantt, 
+                        x='Süre', 
+                        y='Makine', 
+                        base='Başlangıç',
+                        color='İş Kodu',
+                        orientation='h',
+                        custom_data=['İş Kodu', 'Başlangıç', 'Bitiş', 'Süre'],
+                        title="<b>Dinamik Senaryo Çizelgeleme Çıktısı</b>"
+                    )
                     
-                    df_filtered = df_gantt.copy()
-                    if secilen_makineler_filtre and len(secilen_makineler_filtre) > 0:
-                        df_filtered = df_filtered[df_filtered['Makine'].isin(secilen_makineler_filtre)]
-                    if arama_is_kodu.strip():
-                        df_filtered = df_filtered[df_filtered['İş Kodu'].str.contains(arama_is_kodu.strip(), case=False, na=False)]
-                    
-                    st.subheader("📅 Üretim Gantt Şeması (Filtrelenmiş Çizelge)")
-                    
-                    if len(df_filtered) > 0:
-                        fig = px.bar(
-                            df_filtered, 
-                            x='Süre', 
-                            y='Makine', 
-                            base='Başlangıç',
-                            color='İş Kodu',
-                            orientation='h',
-                            custom_data=['İş Kodu', 'Başlangıç', 'Bitiş', 'Süre'],
-                            title="<b>Dinamik Senaryo ve Filtre Bazlı Çizelgeleme Çıktısı</b>"
+                    fig.update_traces(
+                        marker_line_color='black',
+                        marker_line_width=1.0,
+                        opacity=0.9,
+                        hovertemplate=(
+                            "<span style='font-size:14px; font-weight:bold;'>📦 İş Detayları</span><br>"
+                            "<b>İş Kodu:</b> %{customdata[0]}<br>"
+                            "<b>Makine:</b> %{y}<br>"
+                            "<b>Başlangıç Zamanı:</b> %{customdata[1]} Saat<br>"
+                            "<b>Bitiş Zamanı:</b> %{customdata[2]} Saat<br>"
+                            "<b>İşlem Süresi:</b> %{customdata[3]} Saat<br>"
+                            "<extra></extra>"
                         )
-                        
-                        fig.update_traces(
-                            marker_line_color='black',
-                            marker_line_width=1.0,
-                            opacity=0.9,
-                            hovertemplate=(
-                                "<span style='font-size:14px; font-weight:bold;'>📦 İş Detayları</span><br>"
-                                "<b>İş Kodu:</b> %{customdata[0]}<br>"
-                                "<b>Makine:</b> %{y}<br>"
-                                "<b>Başlangıç Zamanı:</b> %{customdata[1]} Saat<br>"
-                                "<b>Bitiş Zamanı:</b> %{customdata[2]} Saat<br>"
-                                "<b>İşlem Süresi:</b> %{customdata[3]} Saat<br>"
-                                "<extra></extra>"
-                            )
-                        )
-                        
-                        dinamik_maksimum_eksen = makespan_val + int(makespan_val * 0.05)
-                        
-                        fig.update_layout(
-                            height=650,
-                            bargap=0.2,
-                            xaxis=dict(title="Zaman (Saat)", range=[0, dinamik_maksimum_eksen], autorange=False, showgrid=True),
-                            yaxis=dict(title="Makine", autorange="reversed", showgrid=True),
-                            hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial", font_color="black", bordercolor="#333")
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.warning("Seçilen filtre kriterlerine uygun iş bulunamadı.")
+                    )
                     
-                    st.subheader("📋 Filtrelenmiş Detaylı Çizelge Tablosu")
-                    st.dataframe(df_filtered, use_container_width=True)
+                    dinamik_maksimum_eksen = makespan_val + int(makespan_val * 0.05)
+                    
+                    fig.update_layout(
+                        height=650,
+                        bargap=0.2,
+                        xaxis=dict(title="Zaman (Saat)", range=[0, dinamik_maksimum_eksen], autorange=False, showgrid=True),
+                        yaxis=dict(title="Makine", autorange="reversed", showgrid=True),
+                        hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial", font_color="black", bordercolor="#333")
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.subheader("📋 Detaylı Çizelge Tablosu")
+                    st.dataframe(df_gantt, use_container_width=True)
 
                     # --- MODEL PERFORMANS KIYASLAMASI ---
                     st.markdown("---")
@@ -303,6 +274,7 @@ if uploaded_file is not None:
                             mime="text/csv",
                         )
                     
+                    # --- ÇOK SAYFALI VE KAPSAMLI PROFESYONEL PDF ÜRETİCİ FONKSİYON ---
                     def generate_comprehensive_pdf(makespan, tardiness, total_jobs, df_details, arizali_list, acil_aktif, acil_kod, acil_sure, acil_mak):
                         buffer = io.BytesIO()
                         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -358,9 +330,11 @@ if uploaded_file is not None:
                         def safe_str(text):
                             return str(text).replace('İ', 'I').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O').replace('Ç', 'C').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g').replace('ü', 'u').replace('ö', 'o').replace('ç', 'c')
 
+                        # --- SAYFA 1: KAPAK VE ÖZET ---
                         elements.append(Paragraph("ANSA AMBALAJ - URETIM OPTIMIZASYON VE KARAR DESTEK RAPORU", title_style))
                         elements.append(Paragraph(f"Endustri Muhendisligi Bitirme Tezi | Olusturma Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", subtitle_style))
                         
+                        # Senaryo Bilgi Kutusu
                         senaryo_metni = "<b>Aktif Senaryo Durumu:</b> Standart Tam Kapasite Uretim"
                         if (arizali_list and len(arizali_list) > 0) or acil_aktif:
                             detaylar = []
@@ -373,6 +347,7 @@ if uploaded_file is not None:
                         elements.append(Paragraph(senaryo_metni, meta_style))
                         elements.append(Spacer(1, 4))
                         
+                        # KPI Özet Tablosu
                         elements.append(Paragraph("1. Yonetici Ozeti ve Temel Performans Gostergeleri (KPI)", heading_style))
                         kpi_data = [
                             [Paragraph("<b>Toplam Makespan (Tamamlanma)</b>", cell_header_style), Paragraph("<b>Toplam Gecikme Puani</b>", cell_header_style), Paragraph("<b>Planlanan Toplam Is</b>", cell_header_style)],
@@ -390,6 +365,7 @@ if uploaded_file is not None:
                         elements.append(t_kpi)
                         elements.append(Spacer(1, 10))
                         
+                        # Makine Yük Dağılımı Tablosu
                         elements.append(Paragraph("2. Makine Bazli Kapasite ve Yuk Dagilimi Ozeti", heading_style))
                         workload_summary = df_details.groupby('Makine')['Süre'].sum().reset_index()
                         work_data = [[Paragraph("<b>Makine Adi</b>", cell_header_style), Paragraph("<b>Toplam Yuk (Saat)</b>", cell_header_style)]]
@@ -409,8 +385,10 @@ if uploaded_file is not None:
                         ]))
                         elements.append(t_work)
                         
+                        # Sayfa Sonu (Detaylı çizelge sonraki sayfaya geçsin)
                         elements.append(PageBreak())
                         
+                        # --- SAYFA 2: TÜM DETAYLI İŞ EMRİ LİSTESİ ---
                         elements.append(Paragraph("3. Detayli Uretim Cizelgesi (Tum Is Emirleri Listesi)", heading_style))
                         elements.append(Paragraph("Asagidaki tablo, OR-Tools CP-SAT modeli tarafindan optimize edilmis tum is emirlerinin baslangic, bitis ve islem suresi detaylarini icerir.", meta_style))
                         elements.append(Spacer(1, 4))
@@ -435,6 +413,7 @@ if uploaded_file is not None:
                         t_detail = Table(detail_data, colWidths=[110, 150, 85, 85, 85])
                         t_detail.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2B6CB0")),
+                            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                             ('ALIGN', (0,1), (0,-1), 'LEFT'),
                             ('ALIGN', (1,1), (1,-1), 'LEFT'),
@@ -444,6 +423,7 @@ if uploaded_file is not None:
                             ('TOPPADDING', (0,0), (-1,-1), 4),
                         ]))
                         
+                        # Başlık stilini beyaz yapalım
                         for col_idx in range(5):
                             detail_data[0][col_idx].style.textColor = colors.white
                             
