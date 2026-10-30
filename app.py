@@ -3,10 +3,11 @@ import pandas as pd
 import plotly.express as px
 from ortools.sat.python import cp_model
 import io
+from datetime import datetime
 
 # ReportLab PDF kütüphaneleri
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -254,7 +255,7 @@ if uploaded_file is not None:
                     machine_workload = machine_workload.set_index('Makine')
                     st.bar_chart(machine_workload)
 
-                    # --- RAPOR İNDİRME ALANI (CSV ve PROFESYONEL PDF) ---
+                    # --- RAPOR İNDİRME ALANI (CSV ve GENİŞLETİLMİŞ PDF) ---
                     st.markdown("---")
                     st.subheader("📥 Üretim Planı ve Yönetici Raporu İndirme")
                     
@@ -273,61 +274,83 @@ if uploaded_file is not None:
                             mime="text/csv",
                         )
                     
-                    # --- DÜZELTİLMİŞ VE PROFESYONEL PDF ÜRETİCİ FONKSİYON ---
-                    def generate_pdf_report(makespan, tardiness, total_jobs, df_details):
+                    # --- ÇOK SAYFALI VE KAPSAMLI PROFESYONEL PDF ÜRETİCİ FONKSİYON ---
+                    def generate_comprehensive_pdf(makespan, tardiness, total_jobs, df_details, arizali_list, acil_aktif, acil_kod, acil_sure, acil_mak):
                         buffer = io.BytesIO()
-                        # Sayfa kenar boşlukları ve boyutu
                         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
                         elements = []
                         
                         styles = getSampleStyleSheet()
                         
-                        # Türkçe karakter sorununu tamamen ortadan kaldırmak için güvenli metin tasarımı ve stiller
                         title_style = ParagraphStyle(
                             'ReportTitle',
                             parent=styles['Heading1'],
-                            fontSize=16,
+                            fontSize=15,
                             textColor=colors.HexColor("#1A365D"),
-                            spaceAfter=6,
+                            spaceAfter=4,
                             alignment=1
                         )
                         subtitle_style = ParagraphStyle(
                             'ReportSubtitle',
                             parent=styles['Normal'],
-                            fontSize=10,
+                            fontSize=9,
                             textColor=colors.HexColor("#4A5568"),
-                            spaceAfter=15,
+                            spaceAfter=12,
                             alignment=1
                         )
                         heading_style = ParagraphStyle(
                             'SectionHeading',
                             parent=styles['Heading2'],
-                            fontSize=12,
+                            fontSize=11,
                             textColor=colors.HexColor("#2B6CB0"),
                             spaceBefore=10,
-                            spaceAfter=5
+                            spaceAfter=4
                         )
                         cell_style = ParagraphStyle(
                             'CellText',
                             parent=styles['Normal'],
-                            fontSize=9,
+                            fontSize=8,
                             textColor=colors.HexColor("#2D3748")
                         )
                         cell_header_style = ParagraphStyle(
                             'CellHeaderText',
                             parent=styles['Normal'],
-                            fontSize=9,
+                            fontSize=8,
                             fontName='Helvetica-Bold',
                             textColor=colors.HexColor("#1A365D")
                         )
+                        meta_style = ParagraphStyle(
+                            'MetaText',
+                            parent=styles['Normal'],
+                            fontSize=8,
+                            textColor=colors.HexColor("#718096"),
+                            spaceAfter=8
+                        )
 
-                        # Başlıklar (Türkçe karakterlerin PDF'te bozulmaması için güvenli formata çevrildi)
-                        elements.append(Paragraph("ANSA AMBALAJ - URETIM OPTIMIZASYON RAPORU", title_style))
-                        elements.append(Paragraph("Endustri Muhendisligi Bitirme Tezi Karar Destek Sistemi", subtitle_style))
+                        def safe_str(text):
+                            return str(text).replace('İ', 'I').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O').replace('Ç', 'C').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g').replace('ü', 'u').replace('ö', 'o').replace('ç', 'c')
+
+                        # --- SAYFA 1: KAPAK VE ÖZET ---
+                        elements.append(Paragraph("ANSA AMBALAJ - URETIM OPTIMIZASYON VE KARAR DESTEK RAPORU", title_style))
+                        elements.append(Paragraph(f"Endustri Muhendisligi Bitirme Tezi | Olusturma Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", subtitle_style))
+                        
+                        # Senaryo Bilgi Kutusu
+                        senaryo_metni = "<b>Aktif Senaryo Durumu:</b> Standart Tam Kapasite Uretim"
+                        if (arizali_list and len(arizali_list) > 0) or acil_aktif:
+                            detaylar = []
+                            if arizali_list:
+                                detaylar.append(f"Arizali Makineler: {', '.join(arizali_list)}")
+                            if acil_aktif:
+                                detaylar.append(f"Acil Siparis Eklendi ({acil_kod} - {acil_sure} Saat - {acil_mak})")
+                            senaryo_metni = f"<b>Aktif Senaryo Durumu:</b> {' | '.join(detaylar)}"
+                        
+                        elements.append(Paragraph(senaryo_metni, meta_style))
+                        elements.append(Spacer(1, 4))
                         
                         # KPI Özet Tablosu
+                        elements.append(Paragraph("1. Yonetici Ozeti ve Temel Performans Gostergeleri (KPI)", heading_style))
                         kpi_data = [
-                            [Paragraph("<b>Toplam Makespan</b>", cell_header_style), Paragraph("<b>Toplam Gecikme Puani</b>", cell_header_style), Paragraph("<b>Planlanan Is Sayisi</b>", cell_header_style)],
+                            [Paragraph("<b>Toplam Makespan (Tamamlanma)</b>", cell_header_style), Paragraph("<b>Toplam Gecikme Puani</b>", cell_header_style), Paragraph("<b>Planlanan Toplam Is</b>", cell_header_style)],
                             [Paragraph(f"{makespan} Saat", cell_style), Paragraph(f"{tardiness}", cell_style), Paragraph(f"{total_jobs} Adet", cell_style)]
                         ]
                         t_kpi = Table(kpi_data, colWidths=[180, 180, 155])
@@ -335,22 +358,20 @@ if uploaded_file is not None:
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-                            ('TOPPADDING', (0,0), (-1,-1), 6),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                            ('TOPPADDING', (0,0), (-1,-1), 5),
                             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0"))
                         ]))
                         elements.append(t_kpi)
                         elements.append(Spacer(1, 10))
                         
-                        elements.append(Paragraph("Ozet Makine Yuk Dagilimi", heading_style))
-                        
+                        # Makine Yük Dağılımı Tablosu
+                        elements.append(Paragraph("2. Makine Bazli Kapasite ve Yuk Dagilimi Ozeti", heading_style))
                         workload_summary = df_details.groupby('Makine')['Süre'].sum().reset_index()
                         work_data = [[Paragraph("<b>Makine Adi</b>", cell_header_style), Paragraph("<b>Toplam Yuk (Saat)</b>", cell_header_style)]]
                         
                         for _, row in workload_summary.iterrows():
-                            # Türkçe karakterleri İngilizce karakter karşılıklarıyla güvenle yazdırıyoruz
-                            makine_adi = str(row['Makine']).replace('İ', 'I').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O').replace('Ç', 'C').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g').replace('ü', 'u').replace('ö', 'o').replace('ç', 'c')
-                            work_data.append([Paragraph(makine_adi, cell_style), Paragraph(str(row['Süre']), cell_style)])
+                            work_data.append([Paragraph(safe_str(row['Makine']), cell_style), Paragraph(str(row['Süre']), cell_style)])
                             
                         t_work = Table(work_data, colWidths=[350, 165])
                         t_work.setStyle(TableStyle([
@@ -359,22 +380,69 @@ if uploaded_file is not None:
                             ('ALIGN', (1,0), (1,-1), 'CENTER'),
                             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-                            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-                            ('TOPPADDING', (0,0), (-1,-1), 5),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                            ('TOPPADDING', (0,0), (-1,-1), 4),
                         ]))
                         elements.append(t_work)
+                        
+                        # Sayfa Sonu (Detaylı çizelge sonraki sayfaya geçsin)
+                        elements.append(PageBreak())
+                        
+                        # --- SAYFA 2: TÜM DETAYLI İŞ EMRİ LİSTESİ ---
+                        elements.append(Paragraph("3. Detayli Uretim Cizelgesi (Tum Is Emirleri Listesi)", heading_style))
+                        elements.append(Paragraph("Asagidaki tablo, OR-Tools CP-SAT modeli tarafindan optimize edilmis tum is emirlerinin baslangic, bitis ve islem suresi detaylarini icerir.", meta_style))
+                        elements.append(Spacer(1, 4))
+                        
+                        detail_data = [[
+                            Paragraph("<b>Is Kodu</b>", cell_header_style),
+                            Paragraph("<b>Atandigi Makine</b>", cell_header_style),
+                            Paragraph("<b>Baslangic (Saat)</b>", cell_header_style),
+                            Paragraph("<b>Bitis (Saat)</b>", cell_header_style),
+                            Paragraph("<b>Sure (Saat)</b>", cell_header_style)
+                        ]]
+                        
+                        for _, row in df_details.iterrows():
+                            detail_data.append([
+                                Paragraph(safe_str(row['İş Kodu']), cell_style),
+                                Paragraph(safe_str(row['Makine']), cell_style),
+                                Paragraph(str(row['Başlangıç']), cell_style),
+                                Paragraph(str(row['Bitiş']), cell_style),
+                                Paragraph(str(row['Süre']), cell_style)
+                            ])
+                            
+                        t_detail = Table(detail_data, colWidths=[110, 150, 85, 85, 85])
+                        t_detail.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2B6CB0")),
+                            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                            ('ALIGN', (0,1), (0,-1), 'LEFT'),
+                            ('ALIGN', (1,1), (1,-1), 'LEFT'),
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0")),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                            ('TOPPADDING', (0,0), (-1,-1), 4),
+                        ]))
+                        
+                        # Başlık stilini beyaz yapalım
+                        for col_idx in range(5):
+                            detail_data[0][col_idx].style.textColor = colors.white
+                            
+                        elements.append(t_detail)
                         
                         doc.build(elements)
                         buffer.seek(0)
                         return buffer
 
-                    pdf_buffer = generate_pdf_report(makespan_val, tardiness_val, is_sayisi, df_gantt)
+                    pdf_buffer = generate_comprehensive_pdf(
+                        makespan_val, tardiness_val, is_sayisi, df_gantt, 
+                        arizali_makineler, aktif_acil_siparis, yeni_is_kodu, yeni_sure, yeni_makine
+                    )
                     
                     with col_dl2:
                         st.download_button(
-                            label="📄 Yönetici Özet Raporunu İndir (PDF)",
+                            label="📄 Genişletilmiş Yönetici Raporunu İndir (PDF)",
                             data=pdf_buffer,
-                            file_name="Ansa_Uretim_Yonetici_Raporu.pdf",
+                            file_name="Ansa_Genisletilmis_Uretim_Raporu.pdf",
                             mime="application/pdf",
                         )
 
