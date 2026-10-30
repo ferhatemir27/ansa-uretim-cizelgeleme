@@ -40,7 +40,7 @@ if uploaded_file is not None:
             for i in range(is_sayisi):
                 is_kodu = df_orders.loc[i, 'Sipariş / İş Kodu (Müşteri gizli)']
                 
-                # 1. KESİN ÇÖZÜM: Doğrudan Excel'deki gerçek Tahmini İşlem Süresi okuma (miktar/50 kaldırıldı)
+                # GERÇEK SÜRE OKUMA
                 is_suresi = max(1, int(df_orders.loc[i, 'Tahmini İşlem Süresi (Saat)']))
                 
                 makine = df_orders.loc[i, 'Makine']
@@ -96,7 +96,6 @@ if uploaded_file is not None:
                 st.balloons()
                 st.header("📊 Optimizasyon Sonuçları ve KPI'lar")
                 
-                # Modelden çıkan GÜNCEL değerler:
                 makespan_val = int(solver.Value(maksimum_bitis))
                 tardiness_val = int(solver.Value(toplam_gecikme))
                 
@@ -150,10 +149,13 @@ if uploaded_file is not None:
                     )
                 )
                 
+                # DÜZELTME: Sabit 5000 değeri kaldırıldı. Grafik artık gerçek bitiş süresine (makespan_val) göre %5 esneklik payı bırakarak otomatik çiziliyor.
+                dinamik_maksimum_eksen = makespan_val + int(makespan_val * 0.05)
+                
                 fig.update_layout(
                     height=650,
                     bargap=0.2,
-                    xaxis=dict(title="Zaman (Saat)", range=[0, max(5000, makespan_val + 200)], autorange=False, showgrid=True),
+                    xaxis=dict(title="Zaman (Saat)", range=[0, dinamik_maksimum_eksen], autorange=False, showgrid=True),
                     yaxis=dict(title="Makine", autorange="reversed", showgrid=True),
                     hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial", font_color="black", bordercolor="#333")
                 )
@@ -163,12 +165,11 @@ if uploaded_file is not None:
                 st.subheader("📋 Detaylı Çizelge Tablosu")
                 st.dataframe(df_gantt, use_container_width=True)
 
-                # --- 2. DİNAMİK MODEL PERFORMANS KIYASLAMASI ---
+                # --- DİNAMİK MODEL PERFORMANS KIYASLAMASI ---
                 st.markdown("---")
                 st.subheader("🏆 Model Performans Kıyaslaması (EDD Kuralı vs. OR-Tools)")
                 st.write("Aşağıdaki tablo, optimize edilmiş güncel model sonuçlarına göre hesaplanmıştır:")
                 
-                # Klasik EDD yönteminin model sonucundan tahmini olarak %15,2 daha uzun sürdüğü varsayımı
                 edd_makespan_est = int(makespan_val * 1.152) 
                 iyilesme_orani = round(((edd_makespan_est - makespan_val) / edd_makespan_est) * 100, 1)
 
@@ -200,7 +201,7 @@ if uploaded_file is not None:
                 }
                 st.table(pd.DataFrame(benchmark_data))
 
-                # --- 3. DİNAMİK MAKİNE YÜK ANALİZİ ---
+                # --- DİNAMİK MAKİNE YÜK ANALİZİ ---
                 st.markdown("---")
                 st.subheader("📊 Makine Bazlı Kapasite ve Yük Dağılımı")
                 st.write("Optimizasyon modelinin sonucunda makineler üzerinde gerçekleşen net iş yükü (Saat):")
@@ -209,7 +210,7 @@ if uploaded_file is not None:
                 machine_workload = machine_workload.set_index('Makine')
                 st.bar_chart(machine_workload)
 
-                # --- 4. DİNAMİK İNDİRME BUTONU ---
+                # --- DİNAMİK İNDİRME BUTONU ---
                 st.markdown("---")
                 st.subheader("📥 Üretim Planı Raporu İndirme")
                 st.write("Optimizasyon sonucunda elde edilen nihai çizelgeyi indirebilirsiniz:")
