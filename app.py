@@ -30,7 +30,6 @@ if uploaded_file is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ 'Ne Olurdu?' (What-If) Senaryoları")
     
-    # Çoklu Makine Arızası Simülasyonu
     arizali_makineler = st.sidebar.multiselect(
         "Bakımda / Arızalı Olan Makineler (Çoklu Seçim)",
         options=tum_makineler,
@@ -238,8 +237,8 @@ if uploaded_file is not None:
                             "%100" if tardiness_val == 0 else "İyileştirilmiş", 
                             "Saniyeler içinde (Dinamik)"
                         ],
-                        "İyileştirme / Kazanım": [
-                            f"%{iyilesme_orani} Daha Kısa Süre", 
+                        "Iyilestirme / Kazanim": [
+                            f"%{iyilesme_orani} Daha Kisa Sure", 
                             "Minimum Gecikme", 
                             "Maksimum Verim", 
                             "Matematiksel Optimum"
@@ -274,71 +273,91 @@ if uploaded_file is not None:
                             mime="text/csv",
                         )
                     
-                    # --- PDF ÜRETİCİ FONKSİYON ---
+                    # --- DÜZELTİLMİŞ VE PROFESYONEL PDF ÜRETİCİ FONKSİYON ---
                     def generate_pdf_report(makespan, tardiness, total_jobs, df_details):
                         buffer = io.BytesIO()
-                        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+                        # Sayfa kenar boşlukları ve boyutu
+                        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
                         elements = []
                         
                         styles = getSampleStyleSheet()
+                        
+                        # Türkçe karakter sorununu tamamen ortadan kaldırmak için güvenli metin tasarımı ve stiller
                         title_style = ParagraphStyle(
                             'ReportTitle',
                             parent=styles['Heading1'],
-                            fontSize=18,
+                            fontSize=16,
                             textColor=colors.HexColor("#1A365D"),
-                            spaceAfter=10,
-                            alignment=1 # Center
+                            spaceAfter=6,
+                            alignment=1
                         )
                         subtitle_style = ParagraphStyle(
                             'ReportSubtitle',
                             parent=styles['Normal'],
-                            fontSize=11,
+                            fontSize=10,
                             textColor=colors.HexColor("#4A5568"),
-                            spaceAfter=20,
+                            spaceAfter=15,
                             alignment=1
                         )
                         heading_style = ParagraphStyle(
                             'SectionHeading',
                             parent=styles['Heading2'],
-                            fontSize=13,
+                            fontSize=12,
                             textColor=colors.HexColor("#2B6CB0"),
                             spaceBefore=10,
                             spaceAfter=5
                         )
-                        
-                        elements.append(Paragraph("ANSA AMBALAJ - ÜRETİM OPTİMİZASYON RAPORU", title_style))
-                        elements.append(Paragraph("Endüstri Mühendisliği Bitirme Tezi Karar Destek Sistemi", subtitle_style))
+                        cell_style = ParagraphStyle(
+                            'CellText',
+                            parent=styles['Normal'],
+                            fontSize=9,
+                            textColor=colors.HexColor("#2D3748")
+                        )
+                        cell_header_style = ParagraphStyle(
+                            'CellHeaderText',
+                            parent=styles['Normal'],
+                            fontSize=9,
+                            fontName='Helvetica-Bold',
+                            textColor=colors.HexColor("#1A365D")
+                        )
+
+                        # Başlıklar (Türkçe karakterlerin PDF'te bozulmaması için güvenli formata çevrildi)
+                        elements.append(Paragraph("ANSA AMBALAJ - URETIM OPTIMIZASYON RAPORU", title_style))
+                        elements.append(Paragraph("Endustri Muhendisligi Bitirme Tezi Karar Destek Sistemi", subtitle_style))
                         
                         # KPI Özet Tablosu
                         kpi_data = [
-                            [Paragraph("<b>Toplam Makespan</b>", styles['Normal']), Paragraph("<b>Toplam Gecikme Puanı</b>", styles['Normal']), Paragraph("<b>Planlanan İş Sayısı</b>", styles['Normal'])],
-                            [f"{makespan} Saat", f"{tardiness}", f"{total_jobs} Adet"]
+                            [Paragraph("<b>Toplam Makespan</b>", cell_header_style), Paragraph("<b>Toplam Gecikme Puani</b>", cell_header_style), Paragraph("<b>Planlanan Is Sayisi</b>", cell_header_style)],
+                            [Paragraph(f"{makespan} Saat", cell_style), Paragraph(f"{tardiness}", cell_style), Paragraph(f"{total_jobs} Adet", cell_style)]
                         ]
-                        t_kpi = Table(kpi_data, colWidths=[180, 180, 170])
+                        t_kpi = Table(kpi_data, colWidths=[180, 180, 155])
                         t_kpi.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
-                            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#1A365D")),
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-                            ('TOPPADDING', (0,0), (-1,-1), 8),
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+                            ('TOPPADDING', (0,0), (-1,-1), 6),
                             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0"))
                         ]))
                         elements.append(t_kpi)
-                        elements.append(Spacer(1, 15))
+                        elements.append(Spacer(1, 10))
                         
-                        elements.append(Paragraph("Özet Makine Yük Dağılımı", heading_style))
+                        elements.append(Paragraph("Ozet Makine Yuk Dagilimi", heading_style))
                         
                         workload_summary = df_details.groupby('Makine')['Süre'].sum().reset_index()
-                        work_data = [["Makine Adı", "Toplam Yük (Saat)"]]
+                        work_data = [[Paragraph("<b>Makine Adi</b>", cell_header_style), Paragraph("<b>Toplam Yuk (Saat)</b>", cell_header_style)]]
+                        
                         for _, row in workload_summary.iterrows():
-                            work_data.append([str(row['Makine']), str(row['Süre'])])
+                            # Türkçe karakterleri İngilizce karakter karşılıklarıyla güvenle yazdırıyoruz
+                            makine_adi = str(row['Makine']).replace('İ', 'I').replace('Ş', 'S').replace('Ğ', 'G').replace('Ü', 'U').replace('Ö', 'O').replace('Ç', 'C').replace('ı', 'i').replace('ş', 's').replace('ğ', 'g').replace('ü', 'u').replace('ö', 'o').replace('ç', 'c')
+                            work_data.append([Paragraph(makine_adi, cell_style), Paragraph(str(row['Süre']), cell_style)])
                             
-                        t_work = Table(work_data, colWidths=[300, 230])
+                        t_work = Table(work_data, colWidths=[350, 165])
                         t_work.setStyle(TableStyle([
                             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EDF2F7")),
                             ('ALIGN', (0,0), (0,-1), 'LEFT'),
                             ('ALIGN', (1,0), (1,-1), 'CENTER'),
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                             ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
                             ('BOTTOMPADDING', (0,0), (-1,-1), 5),
                             ('TOPPADDING', (0,0), (-1,-1), 5),
