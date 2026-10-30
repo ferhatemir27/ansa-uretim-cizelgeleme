@@ -36,62 +36,67 @@ if uploaded_file is not None:
     
     # 2. Acil Sipariş Ekleme Alanı
     aktif_acil_siparis = st.sidebar.checkbox("Sisteme Acil Sipariş Ekle")
+    
     yeni_is_kodu = "ACIL-001"
     yeni_makine = tum_makineler[0] if tum_makineler else ""
     yeni_sure = 24
     
     if aktif_acil_siparis:
         yeni_is_kodu = st.sidebar.text_input("Acil İş / Sipariş Kodu", value="ACIL-001")
-        yeni_makine = st.sidebar.selectbox("Atanacak Makine", options=tum_makineler)
-        yeni_sure = st.sidebar.number_input("Tahmini İşlem Süresi (Saat)", min_value=1, max_value=500, value=24)
+        yeni_makine = st.sidebar.selectbox("Atanacak Makine", options=tum_makineler, key="acil_makine")
+        yeni_sure = st.sidebar.number_input("Tahmini İşlem Süresi (Saat)", min_value=1, max_value=2000, value=100)
     
     st.sidebar.markdown("---")
     
     if st.sidebar.button("🚀 Optimizasyon Modelini Çalıştır"):
         with st.spinner("CP-SAT Çözücü senaryoları işliyor, lütfen bekleyin..."):
             
+            # Kopya oluşturarak orijinal df'yi bozmayalım
+            df_model = df_orders.copy()
+            
             # --- SENARYO FİLTRELERİ ---
             # 1. Arızalı makineleri veri setinden çıkarıyoruz
             if arizali_makineler:
-                df_orders = df_orders[~df_orders['Makine'].isin(arizali_makineler)].reset_index(drop=True)
+                df_model = df_model[~df_model['Makine'].isin(arizali_makineler)].reset_index(drop=True)
             
-            # 2. Acil siparişi veri setine anlık olarak ekliyoruz
+            # 2. Acil siparişi veri setine güvenli bir şekilde ekliyoruz
             if aktif_acil_siparis:
-                yeni_satir = {
-                    'Sipariş / İş Kodu (Müşteri gizli)': yeni_is_kodu,
-                    'Makine': yeni_makine,
+                yeni_satir = pd.DataFrame([{
+                    'Sipariş / İş Kodu (Müşteri gizli)': str(yeni_is_kodu),
+                    'Makine': str(yeni_makine),
                     'Tahmini İşlem Süresi (Saat)': float(yeni_sure),
                     'Hedef Teslim Tarihi': pd.Timestamp.today().strftime('%d.%m.%Y')
-                }
-                df_orders = pd.concat([df_orders, pd.DataFrame([yeni_satir])], ignore_index=True)
+                }])
+                df_model = pd.concat([df_model, yeni_satir], ignore_index=True)
             
-            if len(df_orders) == 0:
+            if len(df_model) == 0:
                 st.error("Seçilen arıza senaryosu nedeniyle planlanacak aktif makine veya iş kalmadı!")
             else:
                 # --- MODEL KURULUMU ---
                 model = cp_model.CpModel()
-                is_sayisi = len(df_orders)
+                is_sayisi = len(df_model)
                 
-                ufuk_suresi = int(df_orders['Tahmini İşlem Süresi (Saat)'].sum() * 2) + 500
+                # Ufuk süresini güncellenen toplam süreye göre dinamik ve güvenli büyütüyoruz
+                ufuk_suresi = int(df_model['Tahmini İşlem Süresi (Saat)'].sum() * 2) + 1000
                 
                 is_araliklari = {}
                 makine_isleri = {}
                 gecikme_degiskenleri = []
                 
-                df_orders['Hedef Teslim Tarihi'] = pd.to_datetime(df_orders['Hedef Teslim Tarihi'], format='%d.%m.%Y', errors='coerce')
-                min_tarih = df_orders['Hedef Teslim Tarihi'].min()
+                df_model['Hedef Teslim Tarihi'] = pd.to_datetime(df_model['Hedef Teslim Tarihi'], format='%d.%m.%Y', errors='coerce')
+                min_tarih = df_model['Hedef Teslim Tarihi'].min()
                 
                 for i in range(is_sayisi):
-                    is_kodu = df_orders.loc[i, 'Sipariş / İş Kodu (Müşteri gizli)']
-                    is_suresi = max(1, int(df_orders.loc[i, 'Tahmini İşlem Süresi (Saat)']))
-                    makine = df_orders.loc[i, 'Makine']
-                    tarih_val = df_orders.loc[i, 'Hedef Teslim Tarihi']
+                    is_kodu = df_model.loc[i, 'Sipariş / İş Kodu (Müşteri gizli)']
+                    is_suresi = max(1, int(df_model.loc[i, 'Tahmini İşlem Süresi (Saat)']))
+                    makine = df_model.loc[i, 'Makine']
+                    tarih_val = df_model.loc[i, 'Hedef Teslim Tarihi']
                     
                     if pd.notnull(tarih_val) and pd.notnull(min_tarih):
                         gun_farki = (tarih_val - min_tarih).days
                         hedef_teslim = max(10, gun_farki * 24)
                     else:
-                        hedef_teslim = 1000 + (i * 20)
+                        hedef_teslim = 2000 + (i * 20)
                     
                     baslangic = model.NewIntVar(0, ufuk_suresi, f'baslangic_{i}')
                     bitis = model.NewIntVar(0, ufuk_suresi, f'bitis_{i}')
@@ -121,7 +126,7 @@ if uploaded_file is not None:
                         model.AddNoOverlap(aralik_listesi)
                 
                 # Amaç Fonksiyonu
-                toplam_gecikme = model.NewIntVar(0, 1000000, 'toplam_gecikme')
+                toplam_gecikme = model.NewIntVar(0, 10000000, 'toplam_gecikme')
                 model.Add(toplam_gecikme == sum(gecikme_degiskenleri))
                 
                 tum_bitisler = [is_araliklari[i]['bitis'] for i in range(is_sayisi)]
@@ -139,9 +144,9 @@ if uploaded_file is not None:
                     
                     # Senaryo Bilgi Uyarıları
                     if arizali_makineler:
-                        st.warning(f"⚠️ **Aktif Arıza Senaryosu:** {', '.join(arizali_makineler)} makineleri devre dışı bırakıldı ve işler kalan parkura yeniden dağıtıldı.")
+                        st.warning(f"⚠️ **Aktif Arıza Senaryosu:** {', '.join(arizali_makineler)} makineleri devre dışı bırakıldı.")
                     if aktif_acil_siparis:
-                        st.info(f"🚨 **Acil Sipariş Entegre Edildi:** '{yeni_is_kodu}' kodlu iş plana başarıyla eklendi.")
+                        st.info(f"🚨 **Acil Sipariş Entegre Edildi:** '{yeni_is_kodu}' kodlu iş ({yeni_sure} Saat) **{yeni_makine}** makinesine atandı.")
                     
                     makespan_val = int(solver.Value(maksimum_bitis))
                     tardiness_val = int(solver.Value(toplam_gecikme))
