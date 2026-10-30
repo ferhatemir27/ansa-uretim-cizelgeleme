@@ -2,6 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from ortools.sat.python import cp_model
+import io
+
+# ReportLab PDF kütüphaneleri
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ANSA Ambalaj - Çizelgeleme Karar Destek Sistemi", layout="wide")
@@ -18,24 +25,22 @@ if uploaded_file is not None:
     df_orders = pd.read_excel(uploaded_file, sheet_name='İş Emirleri (Siparişler)')
     df_setup = pd.read_excel(uploaded_file, sheet_name='Hazırlık Süreleri (Setup)')
     
-    # Mevcut makine listesini alma
     tum_makineler = df_orders['Makine'].dropna().unique().tolist()
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ 'Ne Olurdu?' (What-If) Senaryoları")
     
-    # 1. Çoklu Makine Arızası Simülasyonu (Multiselect - Varsayılan boş, yani arıza yok)
+    # Çoklu Makine Arızası Simülasyonu
     arizali_makineler = st.sidebar.multiselect(
         "Bakımda / Arızalı Olan Makineler (Çoklu Seçim)",
         options=tum_makineler,
         default=[],
-        help="Buradan birden fazla makine seçebilirsiniz. Seçilen makineler devre dışı bırakılır ve işler kalan sağlam makinelere optimize edilerek dağıtılır."
+        help="Seçilen makineler devre dışı bırakılır ve işler kalan sağlam makinelere optimize edilerek dağıtılır."
     )
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("🚨 Acil Sipariş (Hot Order) Ekle")
     
-    # 2. Acil Sipariş Ekleme Alanı
     aktif_acil_siparis = st.sidebar.checkbox("Sisteme Acil Sipariş Ekle")
     
     yeni_is_kodu = "ACIL-001"
@@ -52,15 +57,11 @@ if uploaded_file is not None:
     if st.sidebar.button("🚀 Optimizasyon Modelini Çalıştır"):
         with st.spinner("CP-SAT Çözücü senaryoları işliyor, lütfen bekleyin..."):
             
-            # Orijinal veriyi kopyalıyoruz
             df_model = df_orders.copy()
             
-            # --- SENARYO FİLTRELERİ ---
-            # Kullanıcı gerçekten arızalı makine seçtiyse o makineleri veri setinden çıkarıyoruz
             if arizali_makineler and len(arizali_makineler) > 0:
                 df_model = df_model[~df_model['Makine'].isin(arizali_makineler)].reset_index(drop=True)
             
-            # Acil siparişi veri setine güvenli bir şekilde ekliyoruz
             if aktif_acil_siparis:
                 yeni_satir = pd.DataFrame([{
                     'Sipariş / İş Kodu (Müşteri gizli)': str(yeni_is_kodu),
@@ -77,7 +78,6 @@ if uploaded_file is not None:
                 model = cp_model.CpModel()
                 is_sayisi = len(df_model)
                 
-                # Ufuk süresini güncellenen iş yüküne göre dinamik ayarlıyoruz
                 ufuk_suresi = int(df_model['Tahmini İşlem Süresi (Saat)'].sum() * 2) + 1000
                 
                 is_araliklari = {}
@@ -120,13 +120,11 @@ if uploaded_file is not None:
                         makine_isleri[makine] = []
                     makine_isleri[makine].append(i)
                 
-                # Çakışmasızlık Kısıtı
                 for makine, iş_indeksleri in makine_isleri.items():
                     if len(iş_indeksleri) > 1:
                         aralik_listesi = [is_araliklari[i]['aralik'] for i in iş_indeksleri]
                         model.AddNoOverlap(aralik_listesi)
                 
-                # Amaç Fonksiyonu
                 toplam_gecikme = model.NewIntVar(0, 10000000, 'toplam_gecikme')
                 model.Add(toplam_gecikme == sum(gecikme_degiskenleri))
                 
@@ -135,7 +133,6 @@ if uploaded_file is not None:
                 model.AddMaxEquality(maksimum_bitis, tum_bitisler)
                 model.Minimize(maksimum_bitis + (5 * toplam_gecikme))
                 
-                # Çözücü
                 solver = cp_model.CpSolver()
                 status = solver.Solve(model)
                 
@@ -143,7 +140,6 @@ if uploaded_file is not None:
                     st.balloons()
                     st.header("📊 Optimizasyon Senaryo Sonuçları ve KPI'lar")
                     
-                    # Senaryo Bilgi Uyarıları
                     if arizali_makineler and len(arizali_makineler) > 0:
                         st.warning(f"⚠️ **Aktif Arıza Senaryosu:** {', '.join(arizali_makineler)} makineleri devre dışı bırakıldı.")
                     if aktif_acil_siparis:
@@ -259,21 +255,109 @@ if uploaded_file is not None:
                     machine_workload = machine_workload.set_index('Makine')
                     st.bar_chart(machine_workload)
 
-                    # --- İNDİRME BUTONU ---
+                    # --- RAPOR İNDİRME ALANI (CSV ve PROFESYONEL PDF) ---
                     st.markdown("---")
-                    st.subheader("📥 Üretim Planı Raporu İndirme")
+                    st.subheader("📥 Üretim Planı ve Yönetici Raporu İndirme")
+                    
+                    col_dl1, col_dl2 = st.columns(2)
                     
                     @st.cache_data
                     def convert_df_to_csv(df):
                         return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
 
                     csv_data = convert_df_to_csv(df_gantt)
-                    st.download_button(
-                        label="📥 Senaryo Bazlı Optimize Üretim Planını İndir (CSV)",
-                        data=csv_data,
-                        file_name="Ansa_Senaryo_Uretim_Plani.csv",
-                        mime="text/csv",
-                    )
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Çizelgeyi İndir (CSV)",
+                            data=csv_data,
+                            file_name="Ansa_Senaryo_Uretim_Plani.csv",
+                            mime="text/csv",
+                        )
+                    
+                    # --- PDF ÜRETİCİ FONKSİYON ---
+                    def generate_pdf_report(makespan, tardiness, total_jobs, df_details):
+                        buffer = io.BytesIO()
+                        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+                        elements = []
+                        
+                        styles = getSampleStyleSheet()
+                        title_style = ParagraphStyle(
+                            'ReportTitle',
+                            parent=styles['Heading1'],
+                            fontSize=18,
+                            textColor=colors.HexColor("#1A365D"),
+                            spaceAfter=10,
+                            alignment=1 # Center
+                        )
+                        subtitle_style = ParagraphStyle(
+                            'ReportSubtitle',
+                            parent=styles['Normal'],
+                            fontSize=11,
+                            textColor=colors.HexColor("#4A5568"),
+                            spaceAfter=20,
+                            alignment=1
+                        )
+                        heading_style = ParagraphStyle(
+                            'SectionHeading',
+                            parent=styles['Heading2'],
+                            fontSize=13,
+                            textColor=colors.HexColor("#2B6CB0"),
+                            spaceBefore=10,
+                            spaceAfter=5
+                        )
+                        
+                        elements.append(Paragraph("ANSA AMBALAJ - ÜRETİM OPTİMİZASYON RAPORU", title_style))
+                        elements.append(Paragraph("Endüstri Mühendisliği Bitirme Tezi Karar Destek Sistemi", subtitle_style))
+                        
+                        # KPI Özet Tablosu
+                        kpi_data = [
+                            [Paragraph("<b>Toplam Makespan</b>", styles['Normal']), Paragraph("<b>Toplam Gecikme Puanı</b>", styles['Normal']), Paragraph("<b>Planlanan İş Sayısı</b>", styles['Normal'])],
+                            [f"{makespan} Saat", f"{tardiness}", f"{total_jobs} Adet"]
+                        ]
+                        t_kpi = Table(kpi_data, colWidths=[180, 180, 170])
+                        t_kpi.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E2E8F0")),
+                            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#1A365D")),
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+                            ('TOPPADDING', (0,0), (-1,-1), 8),
+                            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E0"))
+                        ]))
+                        elements.append(t_kpi)
+                        elements.append(Spacer(1, 15))
+                        
+                        elements.append(Paragraph("Özet Makine Yük Dağılımı", heading_style))
+                        
+                        workload_summary = df_details.groupby('Makine')['Süre'].sum().reset_index()
+                        work_data = [["Makine Adı", "Toplam Yük (Saat)"]]
+                        for _, row in workload_summary.iterrows():
+                            work_data.append([str(row['Makine']), str(row['Süre'])])
+                            
+                        t_work = Table(work_data, colWidths=[300, 230])
+                        t_work.setStyle(TableStyle([
+                            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EDF2F7")),
+                            ('ALIGN', (0,0), (0,-1), 'LEFT'),
+                            ('ALIGN', (1,0), (1,-1), 'CENTER'),
+                            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                            ('TOPPADDING', (0,0), (-1,-1), 5),
+                        ]))
+                        elements.append(t_work)
+                        
+                        doc.build(elements)
+                        buffer.seek(0)
+                        return buffer
+
+                    pdf_buffer = generate_pdf_report(makespan_val, tardiness_val, is_sayisi, df_gantt)
+                    
+                    with col_dl2:
+                        st.download_button(
+                            label="📄 Yönetici Özet Raporunu İndir (PDF)",
+                            data=pdf_buffer,
+                            file_name="Ansa_Uretim_Yonetici_Raporu.pdf",
+                            mime="application/pdf",
+                        )
 
                 else:
                     st.error("Seçilen senaryo kısıtları altında model için geçerli bir çözüm bulunamadı!")
