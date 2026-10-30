@@ -24,12 +24,12 @@ if uploaded_file is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ 'Ne Olurdu?' (What-If) Senaryoları")
     
-    # 1. Makine Arızası Simülasyonu Seçimi
-    arizali_makineler = st.sidebar.multiselect(
-        "Bakımda / Arızalı Olan Makineler (Kapatılacak)",
-        options=tum_makineler,
-        default=[], # Varsayılan olarak hiçbiri seçili değil (tüm makineler aktif)
-        help="Seçilen makineler üretim planından tamamen çıkarılır ve işler diğer makinelere dağıtılır."
+    # 1. Makine Arızası Simülasyonu (Hata vermeyen kararlı Selectbox yapısı)
+    ariza_secenegi = ["Arıza / Bakım Yok (Tüm Makineler Aktif)"] + tum_makineler
+    secilen_arizali_makine = st.sidebar.selectbox(
+        "Bakımda / Arızalı Makine Simülasyonu",
+        options=ariza_secenegi,
+        help="Seçilen tek bir makine üretim planından çıkarılır ve işler diğer makinelere dağıtılır."
     )
     
     st.sidebar.markdown("---")
@@ -56,9 +56,11 @@ if uploaded_file is not None:
             df_model = df_orders.copy()
             
             # --- SENARYO FİLTRELERİ ---
-            # Sadece kullanıcı gerçekten arızalı makine seçtiyse filtrele
-            if arizali_makineler and len(arizali_makineler) > 0:
-                df_model = df_model[~df_model['Makine'].isin(arizali_makineler)].reset_index(drop=True)
+            # Sadece gerçek bir arızalı makine seçildiyse o makineyi filtrele
+            ariza_aktif = False
+            if secilen_arizali_makine != "Arıza / Bakım Yok (Tüm Makineler Aktif)":
+                ariza_aktif = True
+                df_model = df_model[df_model['Makine'] != secilen_arizali_makine].reset_index(drop=True)
             
             # Acil siparişi veri setine güvenli bir şekilde ekliyoruz
             if aktif_acil_siparis:
@@ -142,8 +144,8 @@ if uploaded_file is not None:
                     st.balloons()
                     st.header("📊 Optimizasyon Senaryo Sonuçları ve KPI'lar")
                     
-                    if arizali_makineler:
-                        st.warning(f"⚠️ **Aktif Arıza Senaryosu:** {', '.join(arizali_makineler)} makineleri devre dışı bırakıldı.")
+                    if ariza_aktif:
+                        st.warning(f"⚠️ **Aktif Arıza Senaryosu:** **{secilen_arizali_makine}** makinesi devre dışı bırakıldı.")
                     if aktif_acil_siparis:
                         st.info(f"🚨 **Acil Sipariş Entegre Edildi:** '{yeni_is_kodu}' kodlu iş ({yeni_sure} Saat) **{yeni_makine}** makinesine atandı.")
                     
@@ -240,7 +242,7 @@ if uploaded_file is not None:
                             "%100" if tardiness_val == 0 else "İyileştirilmiş", 
                             "Saniyeler içinde (Dinamik)"
                         ],
-                        "İyileştirme / Kazanım": [
+                        "İyileştirة / Kazanım": [
                             f"%{iyilesme_orani} Daha Kısa Süre", 
                             "Minimum Gecikme", 
                             "Maksimum Verim", 
