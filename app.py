@@ -169,17 +169,18 @@ if uploaded_file is not None:
                     
                     df_gantt = pd.DataFrame(gantt_list)
                     
-                    # --- YENİ ÖZELLİK 1: DİNAMİK GANTT VE ÇİZELGE FİLTRELEME ARAÇLARI ---
+                    # --- DÜZELTİLMİŞ VE FERAH FİLTRELEME ALANI ---
                     st.markdown("---")
                     st.subheader("🔍 İnteraktif Görselleştirme ve Filtreleme Araçları")
                     
                     f_col1, f_col2 = st.columns(2)
                     with f_col1:
+                        tum_plan_makineleri = df_gantt['Makine'].unique().tolist()
                         secilen_makineler_filtre = st.multiselect(
                             "Gantt Şemasında Görüntülenecek Makineler",
-                            options=df_gantt['Makine'].unique().tolist(),
-                            default=df_gantt['Makine'].unique().tolist(),
-                            help="Grafikte görmek istediğiniz makineleri seçin veya filtreleyin."
+                            options=tum_plan_makineleri,
+                            default=[],
+                            help="Hiçbir şey seçmezseniz tüm makineler gösterilir. Belirli makineleri görmek için seçebilirsiniz."
                         )
                     with f_col2:
                         arama_is_kodu = st.text_input(
@@ -188,9 +189,8 @@ if uploaded_file is not None:
                             help="Belirli bir iş kodunu aramak için yazın (örn: IE-8062 veya ACIL)."
                         )
                     
-                    # Filtreleme Mantığı
                     df_filtered = df_gantt.copy()
-                    if secilen_makineler_filtre:
+                    if secilen_makineler_filtre and len(secilen_makineler_filtre) > 0:
                         df_filtered = df_filtered[df_filtered['Makine'].isin(secilen_makineler_filtre)]
                     if arama_is_kodu.strip():
                         df_filtered = df_filtered[df_filtered['İş Kodu'].str.contains(arama_is_kodu.strip(), case=False, na=False)]
