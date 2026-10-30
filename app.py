@@ -28,6 +28,7 @@ if uploaded_file is not None:
     arizali_makineler = st.sidebar.multiselect(
         "Bakımda / Arızalı Olan Makineler (Kapatılacak)",
         options=tum_makineler,
+        default=[], # Varsayılan olarak hiçbiri seçili değil (tüm makineler aktif)
         help="Seçilen makineler üretim planından tamamen çıkarılır ve işler diğer makinelere dağıtılır."
     )
     
@@ -51,15 +52,15 @@ if uploaded_file is not None:
     if st.sidebar.button("🚀 Optimizasyon Modelini Çalıştır"):
         with st.spinner("CP-SAT Çözücü senaryoları işliyor, lütfen bekleyin..."):
             
-            # Kopya oluşturarak orijinal df'yi bozmayalım
+            # Orijinal veriyi kopyalıyoruz
             df_model = df_orders.copy()
             
             # --- SENARYO FİLTRELERİ ---
-            # 1. Arızalı makineleri veri setinden çıkarıyoruz
-            if arizali_makineler:
+            # Sadece kullanıcı gerçekten arızalı makine seçtiyse filtrele
+            if arizali_makineler and len(arizali_makineler) > 0:
                 df_model = df_model[~df_model['Makine'].isin(arizali_makineler)].reset_index(drop=True)
             
-            # 2. Acil siparişi veri setine güvenli bir şekilde ekliyoruz
+            # Acil siparişi veri setine güvenli bir şekilde ekliyoruz
             if aktif_acil_siparis:
                 yeni_satir = pd.DataFrame([{
                     'Sipariş / İş Kodu (Müşteri gizli)': str(yeni_is_kodu),
@@ -76,7 +77,6 @@ if uploaded_file is not None:
                 model = cp_model.CpModel()
                 is_sayisi = len(df_model)
                 
-                # Ufuk süresini güncellenen toplam süreye göre dinamik ve güvenli büyütüyoruz
                 ufuk_suresi = int(df_model['Tahmini İşlem Süresi (Saat)'].sum() * 2) + 1000
                 
                 is_araliklari = {}
@@ -142,7 +142,6 @@ if uploaded_file is not None:
                     st.balloons()
                     st.header("📊 Optimizasyon Senaryo Sonuçları ve KPI'lar")
                     
-                    # Senaryo Bilgi Uyarıları
                     if arizali_makineler:
                         st.warning(f"⚠️ **Aktif Arıza Senaryosu:** {', '.join(arizali_makineler)} makineleri devre dışı bırakıldı.")
                     if aktif_acil_siparis:
@@ -156,7 +155,6 @@ if uploaded_file is not None:
                     col2.metric("Toplam Gecikme Ceza Puanı", f"{tardiness_val}")
                     col3.metric("Planlanan Toplam İş", f"{is_sayisi} Adet")
                     
-                    # Çizelge Verilerini Toplama
                     gantt_list = []
                     for i in range(is_sayisi):
                         baslangic_val = int(solver.Value(is_araliklari[i]['baslangic']))
