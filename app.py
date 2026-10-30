@@ -13,11 +13,6 @@ st.markdown("**Endüstri Mühendisliği Bitirme Tezi - Karar Destek Sistemi**")
 st.sidebar.header("📁 Veri ve Parametre Girişi")
 uploaded_file = st.sidebar.file_uploader("Excel Veri Dosyasını Yükleyin", type=["xlsx"])
 
-# Global dataframe tanımı (hata önleme amaçlı)
-df_orders = None
-df_setup = None
-df_gantt = None
-
 if uploaded_file is not None:
     # Verileri Okuma
     df_orders = pd.read_excel(uploaded_file, sheet_name='İş Emirleri (Siparişler)')
@@ -31,17 +26,29 @@ if uploaded_file is not None:
             # --- MODEL KURULUMU ---
             model = cp_model.CpModel()
             is_sayisi = len(df_orders)
-            ufuk_suresi = 10000
+            ufuk_suresi = int(df_orders['Tahmini İşlem Süresi (Saat)'].sum() * 2) + 500
             
             is_araliklari = {}
             makine_isleri = {}
             gecikme_degiskenleri = []
             
+            df_orders['Hedef Teslim Tarihi'] = pd.to_datetime(df_orders['Hedef Teslim Tarihi'], format='%d.%m.%Y', errors='coerce')
+            min_tarih = df_orders['Hedef Teslim Tarihi'].min()
+            
             for i in range(is_sayisi):
-                miktar = df_orders.loc[i, 'Sipariş Miktarı (kg/bobin)']
-                is_suresi = max(1, int(miktar / 50))
+                is_kodu = df_orders.loc[i, 'Sipariş / İş Kodu (Müşteri gizli)']
+                
+                # --- GERÇEK SÜRE OKUMA (Miktar/50 İPTAL EDİLDİ) ---
+                is_suresi = max(1, int(df_orders.loc[i, 'Tahmini İşlem Süresi (Saat)']))
+                
                 makine = df_orders.loc[i, 'Makine']
-                hedef_teslim = 3000 + (i * 20)
+                tarih_val = df_orders.loc[i, 'Hedef Teslim Tarihi']
+                
+                if pd.notnull(tarih_val) and pd.notnull(min_tarih):
+                    gun_farki = (tarih_val - min_tarih).days
+                    hedef_teslim = max(10, gun_farki * 24)
+                else:
+                    hedef_teslim = 1000 + (i * 20)
                 
                 baslangic = model.NewIntVar(0, ufuk_suresi, f'baslangic_{i}')
                 bitis = model.NewIntVar(0, ufuk_suresi, f'bitis_{i}')
@@ -57,7 +64,7 @@ if uploaded_file is not None:
                     'aralik': aralik,
                     'makine': makine,
                     'gecikme': gecikme,
-                    'is_kodu': df_orders.loc[i, 'Sipariş / İş Kodu (Müşteri gizli)']
+                    'is_kodu': is_kodu
                 }
                 
                 if makine not in makine_isleri:
@@ -87,12 +94,14 @@ if uploaded_file is not None:
                 st.balloons()
                 st.header("📊 Optimizasyon Sonuçları ve KPI'lar")
                 
+                makespan_val = int(solver.Value(maksimum_bitis))
+                tardiness_val = int(solver.Value(toplam_gecikme))
+                
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Toplam Tamamlama (Makespan)", f"{solver.Value(maksimum_bitis)} Zaman Birimi")
-                col2.metric("Toplam Gecikme Ceza Puanı", f"{solver.Value(toplam_gecikme)}")
+                col1.metric("Toplam Tamamlama (Makespan)", f"{makespan_val} Saat")
+                col2.metric("Toplam Gecikme Ceza Puanı", f"{tardiness_val}")
                 col3.metric("Planlanan İş Sayısı", f"{is_sayisi} Adet")
                 
-                # Gantt Şeması Verisi Hazırlama
                 gantt_list = []
                 for i in range(is_sayisi):
                     baslangic_val = int(solver.Value(is_araliklari[i]['baslangic']))
@@ -111,7 +120,6 @@ if uploaded_file is not None:
                 
                 st.subheader("📅 Üretim Gantt Şeması (Makine Bazlı Çizelge)")
                 
-                # px.bar tabanlı yatay Gantt görünümü
                 fig = px.bar(
                     df_gantt, 
                     x='Süre', 
@@ -123,7 +131,6 @@ if uploaded_file is not None:
                     title="<b>Makine Çizelgeleme Çıktısı (İnteraktif Gantt)</b>"
                 )
                 
-                # Hovertemplate ayarları
                 fig.update_traces(
                     marker_line_color='black',
                     marker_line_width=1.0,
@@ -132,26 +139,19 @@ if uploaded_file is not None:
                         "<span style='font-size:14px; font-weight:bold;'>📦 İş Detayları</span><br>"
                         "<b>İş Kodu:</b> %{customdata[0]}<br>"
                         "<b>Makine:</b> %{y}<br>"
-                        "<b>Başlangıç Zamanı:</b> %{customdata[1]}<br>"
-                        "<b>Bitiş Zamanı:</b> %{customdata[2]}<br>"
-                        "<b>İşlem Süresi:</b> %{customdata[3]} Zaman Birimi<br>"
+                        "<b>Başlangıç Zamanı:</b> %{customdata[1]} Saat<br>"
+                        "<b>Bitiş Zamanı:</b> %{customdata[2]} Saat<br>"
+                        "<b>İşlem Süresi:</b> %{customdata[3]} Saat<br>"
                         "<extra></extra>"
                     )
                 )
                 
-                # Sönük renk sorununu çözen hoverlabel -> font_color ayarı
                 fig.update_layout(
                     height=650,
                     bargap=0.2,
-                    xaxis=dict(title="Zaman Birimi", range=[0, 4900], autorange=False, showgrid=True),
+                    xaxis=dict(title="Zaman (Saat)", range=[0, max(5000, makespan_val + 200)], autorange=False, showgrid=True),
                     yaxis=dict(title="Makine", autorange="reversed", showgrid=True),
-                    hoverlabel=dict(
-                        bgcolor="white", 
-                        font_size=13, 
-                        font_family="Arial",
-                        font_color="black",  # YAZILARI SİYAH VE NET YAPAR
-                        bordercolor="#333"
-                    )
+                    hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial", font_color="black", bordercolor="#333")
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
@@ -159,93 +159,6 @@ if uploaded_file is not None:
                 st.subheader("📋 Detaylı Çizelge Tablosu")
                 st.dataframe(df_gantt, use_container_width=True)
             else:
-                st.error("Çözüm bulunamadı!")
-
+                st.error("Model için geçerli bir çözüm bulunamadı!")
 else:
-    st.info("Lütfen sol taraftaki panelden **Ansa_Veri_Talep_2Hafta_14-28Ekm2026.xlsx** dosyasını yükleyin.")
-
-# --- MODEL PERFORMANS KIYASLAMASI (DİNAMİK VERİ TABANLI BENCHMARK) ---
-st.markdown("---")
-st.subheader("🏆 Model Performans Kıyaslaması (EDD Kuralı vs. OR-Tools)")
-st.write("Yüklenen Excel veri setindeki iş emirleri, vade tarihleri ve hazırlık (setup) matrisi baz alınarak hesaplanan dinamik karşılaştırma analizi:")
-
-try:
-    df_orders_bench = pd.read_excel("Ansa_Veri_Talep_2Hafta_14-28Ekm2026.xlsx", sheet_name='İş Emirleri (Siparişler)')
-    df_setup_bench = pd.read_excel("Ansa_Veri_Talep_2Hafta_14-28Ekm2026.xlsx", sheet_name='Hazırlık Süreleri (Setup)')
-    
-    optimal_makespan = 4866
-    avg_setup_val = df_setup_bench['Geçiş / Hazırlık Süresi (Saat)'].mean()
-    
-    calculated_edd_makespan = int(optimal_makespan * 1.152)
-    edd_makespan_str = f"~{calculated_edd_makespan} Zaman Birimi"
-    edd_tardiness_str = "450 Puan (Gecikmeler Var)"
-except Exception as e:
-    calculated_edd_makespan = 5605
-    edd_makespan_str = "~5605 Zaman Birimi"
-    edd_tardiness_str = "450 Puan"
-
-benchmark_data = {
-    "Performans Metriği": [
-        "Toplam Tamamlama (Makespan)", 
-        "Toplam Gecikme Cezası", 
-        "Zamanında Teslim Oranı", 
-        "Planlama Süresi / Hızı"
-    ],
-    "Klasik Yöntem (EDD Kuralı)": [
-        edd_makespan_str, 
-        edd_tardiness_str, 
-        "%85", 
-        "Manuel / Kural Tabanlı"
-    ],
-    "ANSA Optimizasyon Modelimiz": [
-        "4866 Zaman Birimi", 
-        "0 Puan", 
-        "%100", 
-        "Saniyeler içinde (Dinamik)"
-    ],
-    "İyileştirme / Kazanım": [
-        f"~%{round(((calculated_edd_makespan - 4866)/calculated_edd_makespan)*100, 1)} Daha Kısa Süre", 
-        "%100 Sıfır Gecikme", 
-        "+%15 Artış", 
-        "Matematiksel Optimum"
-    ]
-}
-
-df_benchmark = pd.DataFrame(benchmark_data)
-st.table(df_benchmark)
-
-st.success("💡 **Performans Değerlendirmesi:** Klasik EDD sıralama kuralında ortaya çıkan sıra bağımlı hazırlık (setup) kayıpları ve gecikmeler, OR-Tools CP-SAT optimizasyon motoru ile tamamen minimize edilmiş ve sıfırlanmıştır.")
-
-# --- MAKİNE KAPASİTE VE YÜK ANALİZİ (YERLEŞİK GRAFİK) ---
-st.markdown("---")
-st.subheader("📊 Makine Bazlı Kapasite ve Yük Dağılımı")
-st.write("Optimizasyon modelinin makineler arasındaki iş yükü dağılımı (Saat):")
-
-try:
-    df_orders_load = pd.read_excel("Ansa_Veri_Talep_2Hafta_14-28Ekm2026.xlsx", sheet_name='İş Emirleri (Siparişler)')
-    machine_workload = df_orders_load.groupby('Makine')['Tahmini İşlem Süresi (Saat)'].sum().reset_index()
-    machine_workload = machine_workload.set_index('Makine')
-    st.bar_chart(machine_workload)
-except Exception as e:
-    st.warning(f"Grafik yüklenirken bir durum oluştu: {e}")
-
-# --- NİHAİ ÇİZELGEYİ İNDİRME BUTONU (Türkçe Excel Uyumlu Semicolon Ayırıcı) ---
-st.markdown("---")
-st.subheader("📥 Üretim Planı Raporu İndirme")
-st.write("Optimizasyon sonucunda elde edilen nihai çizelgeyi sahaya aktarmak veya rapora eklemek için indirebilirsiniz:")
-
-@st.cache_data
-def convert_df_to_csv(df):
-    return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
-
-try:
-    df_download = pd.read_excel("Ansa_Veri_Talep_2Hafta_14-28Ekm2026.xlsx", sheet_name='İş Emirleri (Siparişler)')
-    csv_data = convert_df_to_csv(df_download)
-    st.download_button(
-        label="📥 Optimize Edilmiş Üretim Planını İndir (CSV)",
-        data=csv_data,
-        file_name="Ansa_Optimize_Uretim_Plani.csv",
-        mime="text/csv",
-    )
-except Exception as e:
-    st.info("İndirme dosyası veri setinden hazırlanıyor.")
+    st.info("Lütfen sol taraftaki panelden Excel dosyanızı yükleyin.")
